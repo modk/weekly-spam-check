@@ -1,0 +1,52 @@
+#!/usr/local/bin/bash
+#
+# $FreeBSD$
+#
+
+if [ -r /etc/defaults/periodic.conf ]; then
+    . /etc/defaults/periodic.conf
+    source_periodic_confs
+fi
+
+function filter_printable()
+{
+    declare input=$(</dev/stdin);
+    echo "$input" | tr -dc '\007-\011\012-\015\040-\376' | sed 's/[^@a-zA-Z 0-9`~!@#$%^&*()_+\[\]\\{}|;'\'':",.\/<>?]//g'
+}
+
+function main()
+{
+    printf "Spam check:\n"
+
+    weekago=$(date -v-7d)
+    printf "This is the weekly spam bulletin starting at $weekago\n\n"
+
+    files=$(find /var/mail/virusmails/ -ctime -7 -iname "spam-*")
+    nfiles=$(echo "$files" | wc -l)
+
+    printf "%d spam mails:\n\n" $nfiles
+
+    line=$(printf '%0.1s' "-"{1..73})
+
+    printf "%-30s    %-40s\n" "From" "Subject"
+    printf "%s\n" $line
+
+    for f in $files; do
+        mail=$(zcat "$f")
+        from=$(gawk '/^X-Envelope-From:/,/>/ { if ($0 ~ /</) { sub(/.*</, ""); sub(/>/, ""); print } }' <<< "$mail" | filter_printable )
+        subject=$(gawk -F: '/^Subject:/ { print $2 }' <<< "$mail" | filter_printable )
+
+        echo "" | awk -v from=$from -v subject="$subject" '{
+            if (length(subject) > 40)
+                    subject=substr(subject, 1, 40 - 3) "...";
+            if (length(from) > 30)
+                    from=substr(from, 1, 30 - 3) "...";
+            printf("%-20s   %-40s\n", from, subject);
+        }'
+    done
+
+    printf "%s\n" $line
+}
+
+main "$@"
+
